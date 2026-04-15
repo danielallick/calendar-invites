@@ -1,7 +1,8 @@
 {
   "recipients": {
     "daniel": "env:CALENDAR_EMAIL",
-    "matthijs": "mwolf@teslin.nl"
+    "matthijs": "mwolf@teslin.nl",
+    "brent": "bminkema@teslin.nl"
   },
   "sources": [
     {
@@ -42,7 +43,7 @@
       "events_url": "https://www.beursgenoten.nl/koersen/euronext-aandelen-amsterdam/amsterdam-commodities/agenda",
       "investor_url": "https://www.acomo.nl/investors/",
       "parser": "beursgenoten_agenda",
-      "recipients": ["daniel"]
+      "recipients": ["daniel", "brent"]
     }
   ]
 }
