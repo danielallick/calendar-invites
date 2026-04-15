@@ -114,6 +114,56 @@
       "investor_url": "https://www.marketscreener.com/quote/stock/THULE-GROUP-AB-20798436/calendar/",
       "parser": "marketscreener_company",
       "recipients": ["daniel"]
+    },
+    {
+      "id": "arcadis",
+      "enabled": true,
+      "company": "Arcadis",
+      "ticker": "ARCAD.AS",
+      "events_url": "https://www.beursgenoten.nl/koersen/euronext-aandelen-amsterdam/arcadis/agenda",
+      "investor_url": "https://www.arcadis.com/en/investors",
+      "parser": "beursgenoten_agenda",
+      "recipients": []
+    },
+    {
+      "id": "brunel",
+      "enabled": true,
+      "company": "Brunel",
+      "ticker": "BRNL.AS",
+      "events_url": "https://www.beursgenoten.nl/koersen/euronext-aandelen-amsterdam/brunel/agenda",
+      "investor_url": "https://www.brunelinternational.net/investors",
+      "parser": "beursgenoten_agenda",
+      "recipients": []
+    },
+    {
+      "id": "redcare",
+      "enabled": true,
+      "company": "Redcare Pharmacy N.V.",
+      "ticker": "RDC.DE",
+      "events_url": "https://www.marketscreener.com/quote/stock/REDCARE-PHARMACY-NV-31620967/calendar/",
+      "investor_url": "https://www.marketscreener.com/quote/stock/REDCARE-PHARMACY-NV-31620967/calendar/",
+      "parser": "marketscreener_company",
+      "recipients": ["daniel"] 
+    },
+    {
+      "id": "melexis",
+      "enabled": true,
+      "company": "Melexis",
+      "ticker": "MELE.BR",
+      "events_url": "https://www.beursgenoten.nl/koersen/euronext-brussel/melexis/agenda",
+      "investor_url": "https://investors.melexis.com/",
+      "parser": "beursgenoten_agenda",
+      "recipients": ["daniel"]
+    },
+    {
+      "id": "suss",
+      "enabled": true,
+      "company": "SUSS MicroTec SE",
+      "ticker": "SMHN.DE",
+      "events_url": "https://www.marketscreener.com/quote/stock/SUSS-MICROTEC-SE-8943763/calendar/",
+      "investor_url": "https://www.marketscreener.com/quote/stock/SUSS-MICROTEC-SE-8943763/calendar/",
+      "parser": "marketscreener_company",
+      "recipients": ["daniel"]
     }
   ]
 }
