@@ -1,0 +1,44 @@
+name: Aixtron Calendar Sync
+
+on:
+  # Run daily at 7:00 AM UTC (9:00 AM CEST)
+  schedule:
+    - cron: "0 7 * * *"
+
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+
+permissions:
+  contents: write  # needed to commit sent_events.json back
+
+jobs:
+  sync-calendar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run calendar scraper
+        env:
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          CALENDAR_EMAIL: ${{ secrets.CALENDAR_EMAIL }}
+        run: python scraper.py
+
+      - name: Commit updated state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add sent_events.json
+          git diff --staged --quiet || git commit -m "chore: update sent events state [skip ci]"
+          git push
