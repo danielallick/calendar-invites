@@ -414,20 +414,43 @@ def send_calendar_invite(event: dict, ics_content: str, description: str, to_ema
 
 # ─── State Management ────────────────────────────────────────────────────────
 
-def load_sent_events() -> set:
-    """Load the set of event IDs we've already sent."""
+def load_sent_events() -> dict[str, set[str]]:
+    """Load per-recipient sent state: {event_id -> set of recipient names}.
+
+    Migrates legacy flat sent_ids format automatically on first load.
+    """
     path = Path(SENT_EVENTS_FILE)
-    if path.exists():
-        data = json.loads(path.read_text())
-        return set(data.get("sent_ids", []))
-    return set()
+    if not path.exists():
+        return {}
+
+    data = json.loads(path.read_text())
+
+    # Legacy format: {"sent_ids": [...]} — migrate by marking all as sent to "_legacy"
+    # so existing events are not re-sent to the existing recipients.
+    if "sent_ids" in data and "sent" not in data:
+        return {event_id: {"_legacy"} for event_id in data["sent_ids"]}
+
+    return {event_id: set(names) for event_id, names in data.get("sent", {}).items()}
 
 
-def save_sent_events(sent_ids: set):
-    """Persist the set of sent event IDs."""
+def was_sent_to(sent: dict[str, set[str]], event_id: str, recipient: str) -> bool:
+    """Return True if this event was already sent to this recipient (or via legacy send)."""
+    recipients_sent = sent.get(event_id, set())
+    return recipient in recipients_sent or "_legacy" in recipients_sent
+
+
+def mark_sent(sent: dict[str, set[str]], event_id: str, recipient: str):
+    """Record that this event was successfully sent to this recipient."""
+    if event_id not in sent:
+        sent[event_id] = set()
+    sent[event_id].add(recipient)
+
+
+def save_sent_events(sent: dict[str, set[str]]):
+    """Persist per-recipient sent state."""
+    serializable = {event_id: sorted(names) for event_id, names in sent.items()}
     Path(SENT_EVENTS_FILE).write_text(
-        json.dumps({"sent_ids": sorted(sent_ids), "updated": datetime.utcnow().isoformat()},
-                    indent=2)
+        json.dumps({"sent": serializable, "updated": datetime.utcnow().isoformat()}, indent=2)
     )
 
 
@@ -481,48 +504,59 @@ def main():
     ]
     print(f"✓ {len(future_events)} future events (of {len(events)} total)")
 
-    # 4. Check which events we already sent
-    sent_ids = load_sent_events()
-    new_events = [e for e in future_events if e["id"] not in sent_ids]
-    print(f"✓ {len(new_events)} new events to process\n")
+    # 4. Load sent state (per recipient)
+    sent = load_sent_events()
 
-    if not new_events:
-        print("No new events. All up to date!")
-        return
+    # 5. Process each future event per recipient
+    any_processed = False
+    for event in future_events:
+        # Resolve which recipients should get this event
+        source_recipient_names = event.get("source_recipients", [])
+        if not source_recipient_names:
+            source_recipient_names = ["_fallback"]
 
-    # 5. Process each new event
-    for event in new_events:
+        # Determine which recipients still need this event
+        pending_recipients = [
+            r for r in source_recipient_names
+            if not was_sent_to(sent, event["id"], r)
+        ]
+        if not pending_recipients:
+            continue
+
         print(f"─── {event['name']} ({event['date_str']}) ───")
 
-        # Resolve recipient emails for this source
-        source_recipient_names = event.get("source_recipients", [])
-        to_emails = [recipients[r] for r in source_recipient_names if r in recipients]
-        if not to_emails:
-            # Fall back to CALENDAR_EMAIL if no recipients configured for this source
-            if CALENDAR_EMAIL:
-                to_emails = [CALENDAR_EMAIL]
+        # Resolve emails, using CALENDAR_EMAIL fallback if needed
+        to_emails = []
+        for r in pending_recipients:
+            if r == "_fallback":
+                if CALENDAR_EMAIL:
+                    to_emails.append((r, CALENDAR_EMAIL))
+                else:
+                    print(f"  ⚠ No recipients configured and CALENDAR_EMAIL not set, skipping")
+            elif r in recipients:
+                to_emails.append((r, recipients[r]))
             else:
-                print(f"  ⚠ No recipients configured for this source, skipping")
-                continue
+                print(f"  ⚠ Recipient '{r}' not found in recipients config, skipping")
 
-        # Enrich with Claude
+        if not to_emails:
+            continue
+
+        # Enrich with Claude once per event (shared across all recipients)
         description = enrich_with_claude(event)
-
-        # Generate .ics
         ics_content = generate_ics(event, description)
 
-        # Send invite to each recipient
-        any_success = False
-        for to_email in to_emails:
+        # Send to each pending recipient individually
+        for recipient_name, to_email in to_emails:
             success = send_calendar_invite(event, ics_content, description, to_email)
             if success:
-                any_success = True
+                mark_sent(sent, event["id"], recipient_name)
+                any_processed = True
 
-        if any_success:
-            sent_ids.add(event["id"])
+    if not any_processed:
+        print("No new events for any recipient. All up to date!")
 
     # 6. Save state
-    save_sent_events(sent_ids)
+    save_sent_events(sent)
     print(f"\n{'='*60}")
     print(f"  Done! Processed {len(new_events)} events.")
     print(f"{'='*60}\n")
