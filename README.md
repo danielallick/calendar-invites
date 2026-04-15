@@ -76,12 +76,33 @@ Edit `financial_sources.json`.
   - `ticker`
   - `events_url`
   - `investor_url`
-  - `parser` (currently `table_two_column`)
+  - `parser` (`table_two_column` or `beursgenoten_agenda`)
+  - `recipients` (list of names from the top-level `recipients` block)
+
+### Configure recipients per website
+
+The top-level `recipients` block maps names to email addresses.  
+Use `"env:SECRET_NAME"` to reference a GitHub Secret instead of hardcoding an email.
+
+```json
+"recipients": {
+  "daniel": "env:CALENDAR_EMAIL",
+  "matthijs": "mwolf@teslin.nl"
+}
+```
+
+Each source then lists which recipients should receive invites for that company:
+
+```json
+"recipients": ["matthijs", "daniel"]
+```
+
+If a source has no `recipients` field, the bot falls back to `CALENDAR_EMAIL`.
 
 Current defaults include:
-- Aixtron: `https://www.aixtron.com/en/press/events`
-- Kendrion: `https://www.kendrion.com/en/about-kendrion/investor-relations/financial-calendar`
-- Azelis: `https://www.azelis.com/en/financial-calendar`
+- Aixtron: `https://www.aixtron.com/en/press/events` (`table_two_column`)
+- Kendrion: `https://www.beursgenoten.nl/koersen/euronext-aandelen-amsterdam/kendrion/agenda` (`beursgenoten_agenda`)
+- Azelis: `https://www.azelis.com/en/financial-calendar` (`table_two_column`)
 
 ### Skip Claude enrichment
 

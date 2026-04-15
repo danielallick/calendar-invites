@@ -34,23 +34,121 @@ SENT_EVENTS_FILE = "sent_events.json"  # tracks what we already sent
 CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
-CALENDAR_EMAIL = os.environ.get("CALENDAR_EMAIL", "")  # where to send invites
+CALENDAR_EMAIL = os.environ.get("CALENDAR_EMAIL", "")  # fallback if no recipients configured
 
 
 # ─── Source Configuration ────────────────────────────────────────────────────
 
-def load_sources() -> list[dict]:
-    """Load source definitions from financial_sources.json."""
+def resolve_recipient_emails(recipients_config: dict) -> dict[str, str]:
+    """Resolve recipient name -> email, expanding 'env:VAR_NAME' references."""
+    resolved = {}
+    for name, value in recipients_config.items():
+        if isinstance(value, str) and value.startswith("env:"):
+            var_name = value[4:]
+            email = os.environ.get(var_name, "")
+            if not email:
+                print(f"  ⚠ Recipient '{name}': env var '{var_name}' is not set, skipping")
+            else:
+                resolved[name] = email
+        else:
+            resolved[name] = value
+    return resolved
+
+
+def load_sources() -> tuple[list[dict], dict[str, str]]:
+    """Load source definitions and resolved recipient emails from financial_sources.json."""
     path = Path(SOURCES_FILE)
     if not path.exists():
         print(f"⚠ Missing {SOURCES_FILE}. Create it with at least one source entry.")
-        return []
+        return [], {}
 
     data = json.loads(path.read_text(encoding="utf-8"))
-    return data.get("sources", [])
+    recipients = resolve_recipient_emails(data.get("recipients", {}))
+    return data.get("sources", []), recipients
 
 
 # ─── Scraping ────────────────────────────────────────────────────────────────
+
+_DUTCH_MONTHS = {
+    "januari": "January",
+    "februari": "February",
+    "maart": "March",
+    "april": "April",
+    "mei": "May",
+    "juni": "June",
+    "juli": "July",
+    "augustus": "August",
+    "september": "September",
+    "oktober": "October",
+    "november": "November",
+    "december": "December",
+}
+
+_DUTCH_WEEKDAYS = {
+    "maandag": 0,
+    "dinsdag": 1,
+    "woensdag": 2,
+    "donderdag": 3,
+    "vrijdag": 4,
+    "zaterdag": 5,
+    "zondag": 6,
+}
+
+
+def build_event(source: dict, event_name: str, event_date: datetime, date_text: str, events_url: str, ics_link: str | None = None) -> dict:
+    """Build a normalized event payload used by downstream flow."""
+    event_id = hashlib.sha256(
+        f"{source['id']}|{event_name}|{event_date.isoformat()}".encode()
+    ).hexdigest()[:12]
+
+    return {
+        "id": event_id,
+        "name": event_name,
+        "date": event_date.isoformat(),
+        "date_str": date_text,
+        "ics_link": ics_link,
+        "company": source["company"],
+        "ticker": source["ticker"],
+        "investor_url": source.get("investor_url", events_url),
+        "source_recipients": source.get("recipients", []),
+    }
+
+
+def parse_beursgenoten_date(date_str: str, reference: datetime | None = None) -> datetime | None:
+    """Parse Dutch date labels used on Beursgenoten agenda pages."""
+    text = re.sub(r"\s+", " ", date_str.strip())
+    if not text:
+        return None
+
+    now = reference or datetime.now()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    lower = text.lower()
+
+    if lower == "vandaag":
+        return today
+    if lower == "morgen":
+        return today + timedelta(days=1)
+    if lower == "gisteren":
+        return today - timedelta(days=1)
+
+    m = re.match(r"^afgelopen\s+([a-z]+)$", lower)
+    if m and m.group(1) in _DUTCH_WEEKDAYS:
+        target_weekday = _DUTCH_WEEKDAYS[m.group(1)]
+        delta = (today.weekday() - target_weekday) % 7
+        if delta == 0:
+            delta = 7
+        return today - timedelta(days=delta)
+
+    # Convert Dutch month names into English month names and parse.
+    translated = lower
+    for nl_month, en_month in _DUTCH_MONTHS.items():
+        translated = re.sub(rf"\b{nl_month}\b", en_month, translated)
+    translated = " ".join(part.capitalize() if part.isalpha() else part for part in translated.split())
+    try:
+        return datetime.strptime(translated, "%d %B %Y")
+    except ValueError:
+        return None
+
 
 def scrape_table_two_column_events(source: dict) -> list[dict]:
     """Generic table parser for 2-column rows, date in either column."""
@@ -105,21 +203,50 @@ def scrape_table_two_column_events(source: dict) -> list[dict]:
             else:
                 ics_link = href
 
-        # Create a stable ID from event name + date
-        event_id = hashlib.sha256(
-            f"{source['id']}|{event_name}|{event_date.isoformat()}".encode()
-        ).hexdigest()[:12]
+        events.append(build_event(source, event_name, event_date, date_text, events_url, ics_link))
 
-        events.append({
-            "id": event_id,
-            "name": event_name,
-            "date": event_date.isoformat(),
-            "date_str": date_text,
-            "ics_link": ics_link,
-            "company": source["company"],
-            "ticker": source["ticker"],
-            "investor_url": source.get("investor_url", events_url),
-        })
+    print(f"✓ Scraped {len(events)} events from {source['company']} website")
+    return events
+
+
+def scrape_beursgenoten_agenda(source: dict) -> list[dict]:
+    """Parse agenda blocks from Beursgenoten company pages."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; CalendarBot/1.0)"
+    }
+    events_url = source["events_url"]
+    resp = requests.get(events_url, headers=headers, timeout=30)
+    resp.raise_for_status()
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    lines = [re.sub(r"\s+", " ", line).strip() for line in soup.get_text("\n").splitlines()]
+    lines = [line for line in lines if line]
+
+    events = []
+    seen = set()
+    for i, line in enumerate(lines):
+        event_date = parse_beursgenoten_date(line)
+        if not event_date:
+            continue
+
+        event_name = None
+        for j in range(i + 1, min(i + 6, len(lines))):
+            candidate = lines[j]
+            if parse_beursgenoten_date(candidate):
+                break
+            if ":" in candidate:
+                event_name = candidate
+                break
+
+        if not event_name:
+            continue
+
+        dedupe_key = f"{line}|{event_name}"
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+
+        events.append(build_event(source, event_name, event_date, line, events_url))
 
     print(f"✓ Scraped {len(events)} events from {source['company']} website")
     return events
@@ -239,16 +366,16 @@ END:VCALENDAR"""
 
 # ─── Email Sending ───────────────────────────────────────────────────────────
 
-def send_calendar_invite(event: dict, ics_content: str, description: str):
+def send_calendar_invite(event: dict, ics_content: str, description: str, to_email: str):
     """Send the .ics file as an email calendar invite via Gmail SMTP."""
-    if not all([GMAIL_ADDRESS, GMAIL_APP_PASSWORD, CALENDAR_EMAIL]):
+    if not all([GMAIL_ADDRESS, GMAIL_APP_PASSWORD, to_email]):
         print("  ⚠ Email credentials not configured, skipping send")
         print(f"  Would send invite for: {event['name']} on {event['date_str']}")
         return False
 
     msg = MIMEMultipart("mixed")
     msg["From"] = GMAIL_ADDRESS
-    msg["To"] = CALENDAR_EMAIL
+    msg["To"] = to_email
     msg["Subject"] = f"📊 {event['company']}: {event['name']} – {event['date_str']}"
 
     # HTML body
@@ -278,10 +405,10 @@ def send_calendar_invite(event: dict, ics_content: str, description: str):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
             server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
             server.send_message(msg)
-        print(f"  ✓ Sent invite: {event['name']} → {CALENDAR_EMAIL}")
+        print(f"  ✓ Sent invite: {event['name']} → {to_email}")
         return True
     except Exception as e:
-        print(f"  ✗ Email send failed: {e}")
+        print(f"  ✗ Email send failed to {to_email}: {e}")
         return False
 
 
@@ -311,15 +438,19 @@ def main():
     print(f"  Financial Calendar Bot – {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}\n")
 
-    # 1. Load enabled sources
-    sources = [s for s in load_sources() if s.get("enabled", True)]
+    # 1. Load enabled sources and recipients
+    all_sources, recipients = load_sources()
+    sources = [s for s in all_sources if s.get("enabled", True)]
     if not sources:
         print("No enabled sources found. Exiting.")
         return
 
     print("Checking sources:")
     for source in sources:
-        print(f"  - {source['company']} ({source['events_url']})")
+        source_recipients = source.get("recipients", [])
+        emails = [recipients.get(r, f"(unknown: {r})") for r in source_recipients]
+        fallback = f" (fallback: {CALENDAR_EMAIL})" if not emails and CALENDAR_EMAIL else ""
+        print(f"  - {source['company']} → {', '.join(emails) or 'no recipients'}{fallback}")
     print("")
 
     # 2. Scrape events from each enabled source
@@ -329,6 +460,8 @@ def main():
         try:
             if parser == "table_two_column":
                 source_events = scrape_table_two_column_events(source)
+            elif parser == "beursgenoten_agenda":
+                source_events = scrape_beursgenoten_agenda(source)
             else:
                 print(f"  ⚠ Unknown parser '{parser}' for {source['company']} - skipping")
                 source_events = []
@@ -361,16 +494,31 @@ def main():
     for event in new_events:
         print(f"─── {event['name']} ({event['date_str']}) ───")
 
+        # Resolve recipient emails for this source
+        source_recipient_names = event.get("source_recipients", [])
+        to_emails = [recipients[r] for r in source_recipient_names if r in recipients]
+        if not to_emails:
+            # Fall back to CALENDAR_EMAIL if no recipients configured for this source
+            if CALENDAR_EMAIL:
+                to_emails = [CALENDAR_EMAIL]
+            else:
+                print(f"  ⚠ No recipients configured for this source, skipping")
+                continue
+
         # Enrich with Claude
         description = enrich_with_claude(event)
 
         # Generate .ics
         ics_content = generate_ics(event, description)
 
-        # Send invite
-        success = send_calendar_invite(event, ics_content, description)
+        # Send invite to each recipient
+        any_success = False
+        for to_email in to_emails:
+            success = send_calendar_invite(event, ics_content, description, to_email)
+            if success:
+                any_success = True
 
-        if success:
+        if any_success:
             sent_ids.add(event["id"])
 
     # 6. Save state
