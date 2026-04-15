@@ -1,0 +1,22 @@
+{
+  "sources": [
+    {
+      "id": "aixtron",
+      "enabled": true,
+      "company": "AIXTRON SE",
+      "ticker": "AIXA.DE",
+      "events_url": "https://www.aixtron.com/en/press/events",
+      "investor_url": "https://www.aixtron.com/en/investors",
+      "parser": "table_two_column"
+    },
+    {
+      "id": "kendrion",
+      "enabled": true,
+      "company": "Kendrion N.V.",
+      "ticker": "KENDR.AS",
+      "events_url": "https://www.kendrion.com/en/about-kendrion/investor-relations/financial-calendar",
+      "investor_url": "https://www.kendrion.com/en/about-kendrion/investor-relations",
+      "parser": "table_two_column"
+    }
+  ]
+}

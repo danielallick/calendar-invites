@@ -1,16 +1,16 @@
-# Aixtron Financial Calendar Bot
+# Financial Calendar Bot
 
-Automatically scrapes [Aixtron's financial calendar](https://www.aixtron.com/en/press/events), enriches events with AI-generated context via Claude, and sends calendar invites to your email.
+Automatically scrapes configured financial calendar websites, enriches events with AI-generated context via Claude, and sends calendar invites to your email.
 
 Runs daily on GitHub Actions (free tier). Zero infrastructure to manage.
 
 ## How it works
 
 ```
-Aixtron website → Scraper → Claude API (enrichment) → .ics email → Your calendar
+Financial calendar websites → Scraper → Claude API (enrichment) → .ics email → Your calendar
 ```
 
-1. **Scrapes** the Aixtron events page for earnings dates, AGMs, and report publications
+1. **Scrapes** all enabled websites listed in `financial_sources.json` for earnings dates, AGMs, and report publications
 2. **Deduplicates** against previously sent events (stored in `sent_events.json`)
 3. **Enriches** each new event with Claude, adding investor-relevant context
 4. **Emails** a `.ics` calendar invite that auto-creates an event in your calendar
@@ -21,7 +21,7 @@ Aixtron website → Scraper → Claude API (enrichment) → .ics email → Your 
 ### 1. Fork or clone this repo
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/aixtron-calendar-bot.git
+git clone https://github.com/YOUR_USERNAME/calendar-invites.git
 ```
 
 ### 2. Create a Gmail App Password
@@ -65,9 +65,22 @@ schedule:
   - cron: "0 7 * * 1"  # Every Monday at 7 AM UTC
 ```
 
-### Add more companies
+### Add or remove websites
 
-The scraper is built for Aixtron's specific page structure. To add more companies, you'd duplicate `scraper.py` with a different URL and parser, or refactor into a multi-company setup. Many companies use similar CMS platforms, so the parser often transfers with minor tweaks.
+Edit `financial_sources.json`.
+
+- Set `enabled` to `true` or `false`
+- Add a new source object with:
+  - `id` (unique key)
+  - `company`
+  - `ticker`
+  - `events_url`
+  - `investor_url`
+  - `parser` (currently `table_two_column`)
+
+Current defaults include:
+- Aixtron: `https://www.aixtron.com/en/press/events`
+- Kendrion: `https://www.kendrion.com/en/about-kendrion/investor-relations/financial-calendar`
 
 ### Skip Claude enrichment
 

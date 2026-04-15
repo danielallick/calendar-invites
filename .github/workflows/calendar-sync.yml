@@ -1,4 +1,4 @@
-name: Aixtron Calendar Sync
+name: Financial Calendar Sync
 
 on:
   # Run daily at 7:00 AM UTC (9:00 AM CEST)

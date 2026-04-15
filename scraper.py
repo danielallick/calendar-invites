@@ -1,9 +1,9 @@
 """
-Aixtron Financial Calendar Scraper → Google Calendar Bot
-========================================================
-Scrapes https://www.aixtron.com/en/press/events for upcoming financial dates,
+Financial Calendar Scraper → Google Calendar Bot
+================================================
+Scrapes configured financial calendar websites for upcoming financial dates,
 uses Claude API to enrich descriptions, and creates Google Calendar events
-via Gmail (sending .ics invites to yourself).
+via Gmail (sending .ics invites).
 
 Designed to run daily via GitHub Actions.
 """
@@ -14,6 +14,7 @@ import re
 import hashlib
 import smtplib
 import ssl
+from urllib.parse import urlparse
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -26,7 +27,7 @@ from bs4 import BeautifulSoup
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
-EVENTS_URL = "https://www.aixtron.com/en/press/events"
+SOURCES_FILE = "financial_sources.json"
 SENT_EVENTS_FILE = "sent_events.json"  # tracks what we already sent
 COMPANY = "AIXTRON SE"
 TICKER = "AIXA.DE"
@@ -38,14 +39,36 @@ GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 CALENDAR_EMAIL = os.environ.get("CALENDAR_EMAIL", "")  # where to send invites
 
 
+# ─── Source Configuration ────────────────────────────────────────────────────
+
+def load_sources() -> list[dict]:
+    """Load source definitions from financial_sources.json."""
+    path = Path(SOURCES_FILE)
+    if not path.exists():
+        print(f"⚠ Missing {SOURCES_FILE}. Falling back to built-in Aixtron source.")
+        return [{
+            "id": "aixtron",
+            "enabled": True,
+            "company": COMPANY,
+            "ticker": TICKER,
+            "events_url": "https://www.aixtron.com/en/press/events",
+            "investor_url": "https://www.aixtron.com/en/investors",
+            "parser": "table_two_column",
+        }]
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data.get("sources", [])
+
+
 # ─── Scraping ────────────────────────────────────────────────────────────────
 
-def scrape_aixtron_events() -> list[dict]:
-    """Scrape the Aixtron events page and return structured event data."""
+def scrape_table_two_column_events(source: dict) -> list[dict]:
+    """Generic table parser (event name in first cell, date in second cell)."""
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; CalendarBot/1.0)"
     }
-    resp = requests.get(EVENTS_URL, headers=headers, timeout=30)
+    events_url = source["events_url"]
+    resp = requests.get(events_url, headers=headers, timeout=30)
     resp.raise_for_status()
 
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -79,13 +102,14 @@ def scrape_aixtron_events() -> list[dict]:
         if link_tag:
             href = link_tag["href"]
             if href.startswith("/"):
-                ics_link = f"https://www.aixtron.com{href}"
+                parsed = urlparse(events_url)
+                ics_link = f"{parsed.scheme}://{parsed.netloc}{href}"
             else:
                 ics_link = href
 
         # Create a stable ID from event name + date
         event_id = hashlib.sha256(
-            f"{event_name}|{event_date.isoformat()}".encode()
+            f"{source['id']}|{event_name}|{event_date.isoformat()}".encode()
         ).hexdigest()[:12]
 
         events.append({
@@ -94,11 +118,12 @@ def scrape_aixtron_events() -> list[dict]:
             "date": event_date.isoformat(),
             "date_str": date_text,
             "ics_link": ics_link,
-            "company": COMPANY,
-            "ticker": TICKER,
+            "company": source["company"],
+            "ticker": source["ticker"],
+            "investor_url": source.get("investor_url", events_url),
         })
 
-    print(f"✓ Scraped {len(events)} events from Aixtron website")
+    print(f"✓ Scraped {len(events)} events from {source['company']} website")
     return events
 
 
@@ -178,7 +203,7 @@ def generate_ics(event: dict, description: str) -> str:
     dtstart = dt.strftime("%Y%m%d")
     dtend = (dt + timedelta(days=1)).strftime("%Y%m%d")
     now = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    uid = f"{event['id']}@aixtron-calendar-bot"
+    uid = f"{event['id']}@calendar-bot"
 
     # Escape special characters for iCalendar format
     summary = f"📊 {event['company']}: {event['name']}"
@@ -187,7 +212,7 @@ def generate_ics(event: dict, description: str) -> str:
 
     ics = f"""BEGIN:VCALENDAR
 VERSION:2.0
-PRODID:-//AixtronCalendarBot//EN
+PRODID:-//FinancialCalendarBot//EN
 METHOD:REQUEST
 BEGIN:VEVENT
 UID:{uid}
@@ -196,7 +221,7 @@ DTEND;VALUE=DATE:{dtend}
 DTSTAMP:{now}
 SUMMARY:{summary_escaped}
 DESCRIPTION:{desc_escaped}
-LOCATION:https://www.aixtron.com/en/investors
+LOCATION:{event.get("investor_url", "")}
 STATUS:CONFIRMED
 TRANSP:TRANSPARENT
 BEGIN:VALARM
@@ -226,7 +251,7 @@ def send_calendar_invite(event: dict, ics_content: str, description: str):
     msg = MIMEMultipart("mixed")
     msg["From"] = GMAIL_ADDRESS
     msg["To"] = CALENDAR_EMAIL
-    msg["Subject"] = f"📊 {COMPANY}: {event['name']} – {event['date_str']}"
+    msg["Subject"] = f"📊 {event['company']}: {event['name']} – {event['date_str']}"
 
     # HTML body
     html_body = f"""
@@ -237,7 +262,7 @@ def send_calendar_invite(event: dict, ics_content: str, description: str):
     <hr>
     <p>{description.replace(chr(10), '<br>')}</p>
     <hr>
-    <p><small>Auto-generated by Aixtron Calendar Bot</small></p>
+    <p><small>Auto-generated by Financial Calendar Bot</small></p>
     </body></html>
     """
     msg.attach(MIMEText(html_body, "html"))
@@ -285,16 +310,39 @@ def save_sent_events(sent_ids: set):
 
 def main():
     print(f"\n{'='*60}")
-    print(f"  Aixtron Calendar Bot – {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"  Financial Calendar Bot – {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}\n")
 
-    # 1. Scrape events
-    events = scrape_aixtron_events()
+    # 1. Load enabled sources
+    sources = [s for s in load_sources() if s.get("enabled", True)]
+    if not sources:
+        print("No enabled sources found. Exiting.")
+        return
+
+    print("Checking sources:")
+    for source in sources:
+        print(f"  - {source['company']} ({source['events_url']})")
+    print("")
+
+    # 2. Scrape events from each enabled source
+    events = []
+    for source in sources:
+        parser = source.get("parser", "table_two_column")
+        try:
+            if parser == "table_two_column":
+                source_events = scrape_table_two_column_events(source)
+            else:
+                print(f"  ⚠ Unknown parser '{parser}' for {source['company']} - skipping")
+                source_events = []
+            events.extend(source_events)
+        except Exception as e:
+            print(f"  ⚠ Failed to scrape {source['company']}: {e}")
+
     if not events:
         print("No events found. Exiting.")
         return
 
-    # 2. Filter to future events only
+    # 3. Filter to future events only
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     future_events = [
         e for e in events
@@ -302,7 +350,7 @@ def main():
     ]
     print(f"✓ {len(future_events)} future events (of {len(events)} total)")
 
-    # 3. Check which events we already sent
+    # 4. Check which events we already sent
     sent_ids = load_sent_events()
     new_events = [e for e in future_events if e["id"] not in sent_ids]
     print(f"✓ {len(new_events)} new events to process\n")
@@ -311,7 +359,7 @@ def main():
         print("No new events. All up to date!")
         return
 
-    # 4. Process each new event
+    # 5. Process each new event
     for event in new_events:
         print(f"─── {event['name']} ({event['date_str']}) ───")
 
@@ -327,7 +375,7 @@ def main():
         if success:
             sent_ids.add(event["id"])
 
-    # 5. Save state
+    # 6. Save state
     save_sent_events(sent_ids)
     print(f"\n{'='*60}")
     print(f"  Done! Processed {len(new_events)} events.")
