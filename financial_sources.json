@@ -14,7 +14,7 @@
       "enabled": true,
       "company": "Kendrion N.V.",
       "ticker": "KENDR.AS",
-      "events_url": "https://www.marketscreener.com/quote/stock/AZELIS-GROUP-N-V-127080828/calendar/",
+      "events_url": "https://www.marketscreener.com/quote/stock/KENDRION-N-V-6442/calendar/",
       "investor_url": "https://www.kendrion.com/en/about-kendrion/investor-relations",
       "parser": "table_two_column"
     },
