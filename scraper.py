@@ -63,7 +63,7 @@ def load_sources() -> list[dict]:
 # ─── Scraping ────────────────────────────────────────────────────────────────
 
 def scrape_table_two_column_events(source: dict) -> list[dict]:
-    """Generic table parser (event name in first cell, date in second cell)."""
+    """Generic table parser for 2-column rows, date in either column."""
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; CalendarBot/1.0)"
     }
@@ -80,20 +80,28 @@ def scrape_table_two_column_events(source: dict) -> list[dict]:
         if len(cells) < 2:
             continue
 
-        # Extract event name from first cell
-        event_name = cells[0].get_text(strip=True)
-        if not event_name:
+        first_text = cells[0].get_text(strip=True)
+        second_text = cells[1].get_text(strip=True)
+        if not first_text or not second_text:
             continue
 
-        # Extract date from second cell
-        date_text = cells[1].get_text(strip=True)
-        # Clean up the date text (remove "Date" prefix if present)
-        date_text = re.sub(r"^Date\s*", "", date_text, flags=re.IGNORECASE).strip()
+        # Clean up date labels such as "Date 19 February 2026"
+        first_clean = re.sub(r"^Date\s*", "", first_text, flags=re.IGNORECASE).strip()
+        second_clean = re.sub(r"^Date\s*", "", second_text, flags=re.IGNORECASE).strip()
 
-        # Parse the date
-        event_date = parse_event_date(date_text)
-        if not event_date:
-            print(f"  ⚠ Could not parse date '{date_text}' for '{event_name}'")
+        # Support both "event | date" and "date | event" table layouts.
+        first_date = parse_event_date(first_clean)
+        second_date = parse_event_date(second_clean)
+        if second_date:
+            event_name = first_text
+            date_text = second_clean
+            event_date = second_date
+        elif first_date:
+            event_name = second_text
+            date_text = first_clean
+            event_date = first_date
+        else:
+            print(f"  ⚠ Could not parse date for row '{first_text} | {second_text}'")
             continue
 
         # Extract .ics link if available

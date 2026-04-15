@@ -81,6 +81,7 @@ Edit `financial_sources.json`.
 Current defaults include:
 - Aixtron: `https://www.aixtron.com/en/press/events`
 - Kendrion: `https://www.kendrion.com/en/about-kendrion/investor-relations/financial-calendar`
+- Azelis: `https://www.azelis.com/en/financial-calendar`
 
 ### Skip Claude enrichment
 
