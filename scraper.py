@@ -14,6 +14,7 @@ import re
 import hashlib
 import smtplib
 import ssl
+import sys
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
@@ -25,6 +26,12 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup  # pyright: ignore[reportMissingModuleSource]
 
+# Ensure Unicode logs print correctly on Windows consoles (cp1252 by default).
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 # ─── Configuration ───────────────────────────────────────────────────────────
 
 SOURCES_FILE = "financial_sources.json"
@@ -34,7 +41,6 @@ SENT_EVENTS_FILE = "sent_events.json"  # tracks what we already sent
 CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
-CALENDAR_EMAIL = os.environ.get("CALENDAR_EMAIL", "")  # fallback if no recipients configured
 
 
 # ─── Source Configuration ────────────────────────────────────────────────────
@@ -472,8 +478,7 @@ def main():
     for source in sources:
         source_recipients = source.get("recipients", [])
         emails = [recipients.get(r, f"(unknown: {r})") for r in source_recipients]
-        fallback = f" (fallback: {CALENDAR_EMAIL})" if not emails and CALENDAR_EMAIL else ""
-        print(f"  - {source['company']} → {', '.join(emails) or 'no recipients'}{fallback}")
+        print(f"  - {source['company']} → {', '.join(emails) or 'no recipients'}")
     print("")
 
     # 2. Scrape events from each enabled source
@@ -513,8 +518,6 @@ def main():
     for event in future_events:
         # Resolve which recipients should get this event
         source_recipient_names = event.get("source_recipients", [])
-        if not source_recipient_names:
-            source_recipient_names = ["_fallback"]
 
         # Determine which recipients still need this event
         pending_recipients = [
@@ -526,15 +529,10 @@ def main():
 
         print(f"─── {event['name']} ({event['date_str']}) ───")
 
-        # Resolve emails, using CALENDAR_EMAIL fallback if needed
+        # Resolve recipient names to email addresses
         to_emails = []
         for r in pending_recipients:
-            if r == "_fallback":
-                if CALENDAR_EMAIL:
-                    to_emails.append((r, CALENDAR_EMAIL))
-                else:
-                    print(f"  ⚠ No recipients configured and CALENDAR_EMAIL not set, skipping")
-            elif r in recipients:
+            if r in recipients:
                 to_emails.append((r, recipients[r]))
             else:
                 print(f"  ⚠ Recipient '{r}' not found in recipients config, skipping")

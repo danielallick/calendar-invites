@@ -48,7 +48,6 @@ In your repo → Settings → Secrets and variables → Actions, add:
 | `CLAUDE_API_KEY` | Your Anthropic API key |
 | `GMAIL_ADDRESS` | Your Gmail address (sender) |
 | `GMAIL_APP_PASSWORD` | The 16-char app password from step 2 |
-| `CALENDAR_EMAIL` | Email to receive invites (can be same as GMAIL_ADDRESS) |
 
 ### 5. Enable GitHub Actions
 
@@ -81,12 +80,11 @@ Edit `financial_sources.json`.
 
 ### Configure recipients per website
 
-The top-level `recipients` block maps names to email addresses.  
-Use `"env:SECRET_NAME"` to reference a GitHub Secret instead of hardcoding an email.
+The top-level `recipients` block maps names to email addresses.
 
 ```json
 "recipients": {
-  "daniel": "env:CALENDAR_EMAIL",
+  "daniel": "dallick@teslin.nl",
   "matthijs": "mwolf@teslin.nl"
 }
 ```
@@ -97,7 +95,7 @@ Each source then lists which recipients should receive invites for that company:
 "recipients": ["matthijs", "daniel"]
 ```
 
-If a source has no `recipients` field, the bot falls back to `CALENDAR_EMAIL`.
+If a source has an empty `recipients` list, no invites are sent for that source.
 
 Current defaults include:
 - Aixtron: `https://www.aixtron.com/en/press/events` (`table_two_column`)
@@ -122,7 +120,6 @@ pip install -r requirements.txt
 # Set env vars
 export GMAIL_ADDRESS="you@gmail.com"
 export GMAIL_APP_PASSWORD="xxxx xxxx xxxx xxxx"
-export CALENDAR_EMAIL="you@gmail.com"
 export CLAUDE_API_KEY="sk-ant-..."
 
 python scraper.py
