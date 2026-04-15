@@ -258,6 +258,51 @@ def scrape_beursgenoten_agenda(source: dict) -> list[dict]:
     return events
 
 
+def scrape_marketscreener_company(source: dict) -> list[dict]:
+    """Scrape only company-specific 'Upcoming events on ...' from MarketScreener."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; CalendarBot/1.0)"
+    }
+    events_url = source["events_url"]
+    resp = requests.get(events_url, headers=headers, timeout=30)
+    resp.raise_for_status()
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    heading = soup.find(
+        lambda tag: tag.name in ["h2", "h3"]
+        and tag.get_text(" ", strip=True).lower().startswith("upcoming events on ")
+    )
+    if not heading:
+        print("  ⚠ Could not find company 'Upcoming events on ...' section")
+        return []
+
+    table = heading.find_next("table")
+    if not table:
+        print("  ⚠ Could not find table under company upcoming section")
+        return []
+
+    events = []
+    for row in table.select("tr"):
+        cells = row.find_all("td")
+        if len(cells) < 2:
+            continue
+
+        date_text = cells[0].get_text(" ", strip=True)
+        event_name = cells[1].get_text(" ", strip=True)
+        if not date_text or not event_name:
+            continue
+
+        event_date = parse_event_date(date_text)
+        if not event_date:
+            print(f"  ⚠ Could not parse date '{date_text}' for '{event_name}'")
+            continue
+
+        events.append(build_event(source, event_name, event_date, date_text, events_url))
+
+    print(f"✓ Scraped {len(events)} events from {source['company']} website")
+    return events
+
+
 def parse_event_date(date_str: str) -> datetime | None:
     """Try multiple date formats to parse the event date."""
     formats = [
@@ -490,6 +535,8 @@ def main():
                 source_events = scrape_table_two_column_events(source)
             elif parser == "beursgenoten_agenda":
                 source_events = scrape_beursgenoten_agenda(source)
+            elif parser == "marketscreener_company":
+                source_events = scrape_marketscreener_company(source)
             else:
                 print(f"  ⚠ Unknown parser '{parser}' for {source['company']} - skipping")
                 source_events = []

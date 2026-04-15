@@ -100,10 +100,20 @@
       "enabled": true,
       "company": "WashTec AG",
       "ticker": "WSU.DE",
-      "events_url": "https://ir.washtec.de/en/financial-calendar/",
-      "investor_url": "https://ir.washtec.de/en/",
-      "parser": "table_two_column",
+      "events_url": "https://www.marketscreener.com/quote/stock/WASHTEC-AG-436704/calendar/",
+      "investor_url": "https://www.marketscreener.com/quote/stock/WASHTEC-AG-436704/calendar/",
+      "parser": "marketscreener_company",
       "recipients": ["daniel"]
+    },
+    {
+      "id": "thule",
+      "enabled": false,
+      "company": "Thule Group AB",
+      "ticker": "THULE.ST",
+      "events_url": "https://www.marketscreener.com/quote/stock/THULE-GROUP-AB-20798436/calendar/",
+      "investor_url": "https://www.marketscreener.com/quote/stock/THULE-GROUP-AB-20798436/calendar/",
+      "parser": "marketscreener_company",
+      "recipients": []
     }
   ]
 }
