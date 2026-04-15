@@ -14,7 +14,7 @@
       "enabled": true,
       "company": "Kendrion N.V.",
       "ticker": "KENDR.AS",
-      "events_url": "https://www.marketscreener.com/quote/stock/KENDRION-N-V-6442/calendar/",
+      "events_url": "https://www.beursgenoten.nl/koersen/euronext-aandelen-amsterdam/kendrion/agenda",
       "investor_url": "https://www.kendrion.com/en/about-kendrion/investor-relations",
       "parser": "table_two_column"
     },
