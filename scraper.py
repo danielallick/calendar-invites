@@ -509,6 +509,7 @@ def main():
 
     # 5. Process each future event per recipient
     any_processed = False
+    processed_events = 0
     for event in future_events:
         # Resolve which recipients should get this event
         source_recipient_names = event.get("source_recipients", [])
@@ -541,6 +542,8 @@ def main():
         if not to_emails:
             continue
 
+        processed_events += 1
+
         # Enrich with Claude once per event (shared across all recipients)
         description = enrich_with_claude(event)
         ics_content = generate_ics(event, description)
@@ -558,7 +561,7 @@ def main():
     # 6. Save state
     save_sent_events(sent)
     print(f"\n{'='*60}")
-    print(f"  Done! Processed {len(new_events)} events.")
+    print(f"  Done! Processed {processed_events} events.")
     print(f"{'='*60}\n")
 
 
