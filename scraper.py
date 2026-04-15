@@ -333,7 +333,7 @@ def enrich_with_claude(event: dict) -> str:
     prompt = f"""You are an investment analyst assistant. Generate a brief, useful
 calendar invite description (3-5 sentences) for this financial event:
 
-Company: {event['company']}
+Company: {event['company']} 
 Ticker: {event['ticker']}
 Event: {event['name']}
 Date: {event['date_str']}
@@ -370,7 +370,7 @@ Keep it concise and actionable. No markdown formatting, plain text only."""
         return f"{event['company']} ({event['ticker']})\n{event['name']}\nDate: {event['date_str']}"
 
 
-# ─── Calendar Invite (.ics) Generation ───────────────────────────────────────
+# ─── Calendar Invite (.ics) Generation ───────────────────────────────────────xx
 
 def generate_ics(event: dict, description: str) -> str:
     """Generate an .ics calendar file for the event."""
