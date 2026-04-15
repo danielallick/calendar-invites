@@ -29,8 +29,6 @@ from bs4 import BeautifulSoup
 
 SOURCES_FILE = "financial_sources.json"
 SENT_EVENTS_FILE = "sent_events.json"  # tracks what we already sent
-COMPANY = "AIXTRON SE"
-TICKER = "AIXA.DE"
 
 # Environment variables (set as GitHub Secrets)
 CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
@@ -45,16 +43,8 @@ def load_sources() -> list[dict]:
     """Load source definitions from financial_sources.json."""
     path = Path(SOURCES_FILE)
     if not path.exists():
-        print(f"⚠ Missing {SOURCES_FILE}. Falling back to built-in Aixtron source.")
-        return [{
-            "id": "aixtron",
-            "enabled": True,
-            "company": COMPANY,
-            "ticker": TICKER,
-            "events_url": "https://www.aixtron.com/en/press/events",
-            "investor_url": "https://www.aixtron.com/en/investors",
-            "parser": "table_two_column",
-        }]
+        print(f"⚠ Missing {SOURCES_FILE}. Create it with at least one source entry.")
+        return []
 
     data = json.loads(path.read_text(encoding="utf-8"))
     return data.get("sources", [])
